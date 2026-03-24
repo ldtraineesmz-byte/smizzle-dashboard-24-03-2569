@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smizzle Burger - OM Training Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            red: '#D92D20',    // Smizzle Red
+                            yellow: '#F59E0B', // Cheese Yellow
+                            brown: '#78350F',  // Bun Brown
+                            light: '#FEF3C7',  // Light yellow background
+                            bg: '#FAFAFA'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Prompt', sans-serif; background-color: #FAFAFA; }
+        .tab-active { border-bottom: 4px solid #D92D20; color: #D92D20; font-weight: 600; }
+        .tab-inactive { color: #78350F; border-bottom: 4px solid transparent; }
+        .tab-inactive:hover { color: #D92D20; background-color: #FEF3C7; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Mock Data (อ้างอิงจากไฟล์ CSV ที่ให้มา) ---
+        const dashboardSummary = {
+            totalHC: 72,
+            atRisk: 6,
+            newJoiner: 8,
+            lastUpdate: '24 มีนาคม 2569'
+        };
+
+        const branchScores = [
+            { branch: 'BAM', ops: 67, lead: 40 },
+            { branch: 'EMB', ops: 77, lead: 50 },
+            { branch: 'ARI', ops: 74, lead: 80 },
+            { branch: 'CIR', ops: 67, lead: 30 },
+            { branch: 'EMQ', ops: 75, lead: 50 },
+            { branch: 'TDP', ops: 61, lead: 40 },
+            { branch: 'KIT', ops: 11, lead: 0 }
+        ];
+
+        const priorities = [
+            { id: 1, type: '🔴 เร่งด่วน', category: 'คน', branch: 'BAM', action: 'SS กิตติพงษ์ เสี่ยงออก — ถ้าออกจริง BAM ไม่มี SS เลย → ต้องหาคนแทนหรือพัฒนา BOH ขึ้นมา' },
+            { id: 2, type: '🔴 เร่งด่วน', category: 'คน', branch: 'EMQ', action: 'ไม่มี RM + BOH 2 คนเสี่ยงออก → ถ้าออกจริง EMQ จะขาดแรงงาน (เหลือ BOH 5 จาก 7)' },
+            { id: 3, type: '🔴 เร่งด่วน', category: 'Training', branch: 'KIT', action: 'Staff 4 คน = 0 training ทุกหลักสูตร ทั้งที่ผลิตอาหารส่งทุกสาขา → จัดหลักสูตร Food Safety + ผู้สัมผัสอาหาร' },
+            { id: 4, type: '🟡 สำคัญ', category: 'โครงสร้าง', branch: 'EMB', action: 'ไม่มี SS → RM+ARM ต้องรับภาระทั้งหมด ต้องพิจารณาเลื่อน BOH ที่มีศักยภาพ' },
+            { id: 5, type: '🟡 สำคัญ', category: 'โครงสร้าง', branch: 'CIR', action: 'ไม่มี SS + ARM ใหม่ (ธันฐกรณ์ 8 วัน, 0 training) → RM ปณิธาน แบกทั้งสาขา' },
+            { id: 6, type: '🟡 สำคัญ', category: 'Training', branch: 'TDP', action: 'SS อังค์วรา (เริ่ม 1.5 เดือน) = 0 training → ต้องเร่ง TTT + SM + Food Safety ก่อน' }
+        ];
+
+        const branchDetails = {
+            'BAM': { name: 'Bambini Villa', hc: 10, rm: '1 (ณิชกมล)', arm: '0', ss: '1 (กิตติพงษ์ - At Risk)', opsNote: 'ปานกลาง - ขาด ผู้สัมผัสอาหาร ทั้งสาขา', leadNote: 'ต่ำ - RM ขาด Shift Mgt, SS ขาด P&L, SM, WCH' },
+            'EMB': { name: 'Central Embassy', hc: 10, rm: '1 (กรรณิกา)', arm: '2', ss: '0', opsNote: 'ปานกลาง - ขาด ผู้สัมผัสอาหาร ทั้งสาขา', leadNote: 'ปานกลาง - ARM ทั้ง 2 ขาด P&L, RM ขาด Shift Mgt.' },
+            'KIT': { name: 'Central Kitchen', hc: 6, rm: '0', arm: '0', ss: '0', opsNote: 'วิกฤต ❌ - Staff 4 คน = 0 training ทั้งหมด', leadNote: 'ต่ำ - Mgr ขาดหลายหลักสูตร, Asst. ขาด TTT, P&L' },
+            'TDP': { name: 'True Digital Park', hc: 12, rm: '1 (เอกสิทธิ์)', arm: '1', ss: '1 (อังค์วรา)', opsNote: 'ปานกลาง - Staff ส่วนใหญ่ครบ, New Joiners 2 คนยัง 0', leadNote: 'ต่ำ - SS อังค์วรา = 0 training, RM ขาด Shift Mgt.' }
+        };
+
+        const employees = [
+            { id: 1, branch: 'BAM', name: 'นางสาวพรวดี เจริญพร', pos: 'BOH', isAtRisk: false, isNew: false, courses: { ttt: null, foodHandler: null, pnl: null, foodSafety: '2026-02-06', bohFoh: '2026-02-06', shiftMgt: null, wch: null } },
+            { id: 2, branch: 'BAM', name: 'นายกิตติพงษ์ (สมมติ)', pos: 'Shift Supervisor', isAtRisk: true, isNew: false, courses: { ttt: '2025-01-01', foodHandler: null, pnl: null, foodSafety: '2025-01-02', bohFoh: '2025-01-03', shiftMgt: null, wch: null } },
+            { id: 3, branch: 'TDP', name: 'นางสาวอังค์วรา อุดมเรืองเกียรติ', pos: 'Shift Supervisor', isAtRisk: false, isNew: true, courses: { ttt: null, foodHandler: null, pnl: null, foodSafety: null, bohFoh: null, shiftMgt: null, wch: null } },
+            { id: 4, branch: 'TDP', name: 'นายเอกสิทธิ์ รุ่งสิงห์ทอง', pos: 'Restaurant Manager', isAtRisk: false, isNew: false, courses: { ttt: '2026-01-08', foodHandler: '2026-01-13', pnl: '2026-02-10', foodSafety: '2026-02-06', bohFoh: '2026-02-06', shiftMgt: null, wch: '2026-03-13' } },
+            { id: 5, branch: 'KIT', name: 'นางสาวมณีรัตน์ วรราช', pos: 'Asst. Kitchen Manager', isAtRisk: false, isNew: false, courses: { ttt: null, foodHandler: '2025-04-25', pnl: null, foodSafety: null, bohFoh: null, shiftMgt: '2026-02-18', wch: null } },
+            { id: 6, branch: 'KIT', name: 'นางสาวเท็ท เท็ท ลิน', pos: 'Staff', isAtRisk: false, isNew: false, courses: { ttt: null, foodHandler: null, pnl: null, foodSafety: null, bohFoh: null, shiftMgt: null, wch: null } },
+            { id: 7, branch: 'EMQ', name: 'นายสมชาย (สมมติ)', pos: 'BOH', isAtRisk: true, isNew: false, courses: { ttt: null, foodHandler: null, pnl: null, foodSafety: '2025-10-10', bohFoh: '2025-10-11', shiftMgt: null, wch: null } },
+        ];
+
+        // --- Components ---
+
+        // Icons
+        const IconUsers = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>;
+        const IconAlert = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>;
+        const IconNew = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>;
+        const IconCheck = () => <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>;
+        const IconCross = () => <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>;
+
+        function Dashboard() {
+            const [activeTab, setActiveTab] = useState('overview');
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Header */}
+                    <header className="bg-brand-brown text-white shadow-md">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-brand-red p-2 rounded-lg">
+                                    <svg className="w-8 h-8 text-brand-yellow" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-bold text-brand-yellow">Smizzle Burger</h1>
+                                    <p className="text-xs text-gray-300">Training & Readiness Dashboard</p>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-sm bg-brand-brown border border-brand-yellow text-brand-yellow px-3 py-1 rounded-full">
+                                    ข้อมูล ณ วันที่: {dashboardSummary.lastUpdate}
+                                </span>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Navigation Tabs */}
+                    <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex space-x-8">
+                                <button 
+                                    onClick={() => setActiveTab('overview')}
+                                    className={`py-4 px-1 focus:outline-none transition-colors duration-200 ${activeTab === 'overview' ? 'tab-active' : 'tab-inactive'}`}
+                                >
+                                    ภาพรวม & แจ้งเตือนด่วน
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('branch')}
+                                    className={`py-4 px-1 focus:outline-none transition-colors duration-200 ${activeTab === 'branch' ? 'tab-active' : 'tab-inactive'}`}
+                                >
+                                    เจาะลึกรายสาขา
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('employee')}
+                                    className={`py-4 px-1 focus:outline-none transition-colors duration-200 ${activeTab === 'employee' ? 'tab-active' : 'tab-inactive'}`}
+                                >
+                                    สถานะรายบุคคล (Training Gap)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        {activeTab === 'overview' && <TabOverview />}
+                        {activeTab === 'branch' && <TabBranch />}
+                        {activeTab === 'employee' && <TabEmployee />}
+                    </main>
+                </div>
+            );
+        }
+
+        // --- Tab 1: Overview ---
+        function TabOverview() {
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            useEffect(() => {
+                if (chartRef.current) {
+                    // Destroy previous instance to prevent rendering issues
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+
+                    const ctx = chartRef.current.getContext('2d');
+                    
+                    Chart.defaults.font.family = 'Prompt';
+                    
+                    chartInstance.current = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: branchScores.map(d => d.branch),
+                            datasets: [
+                                {
+                                    label: 'Ops Score (%)',
+                                    data: branchScores.map(d => d.ops),
+                                    backgroundColor: '#F59E0B', // Yellow
+                                    borderRadius: 4,
+                                },
+                                {
+                                    label: 'Leadership Score (%)',
+                                    data: branchScores.map(d => d.lead),
+                                    backgroundColor: '#78350F', // Brown
+                                    borderRadius: 4,
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'top' },
+                                tooltip: {
+                                    callbacks: { label: (context) => `${context.dataset.label}: ${context.parsed.y}%` }
+                                }
+                            },
+                            scales: {
+                                y: { beginAtZero: true, max: 100 }
+                            }
+                        }
+                    });
+                }
+                
+                return () => {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+                };
+            }, []);
+
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between">
+                            <div>
+                                <p className="text-sm text-gray-500 font-medium">พนักงานทั้งหมด (HC)</p>
+                                <p className="text-3xl font-bold text-brand-brown mt-1">{dashboardSummary.totalHC} <span className="text-base font-normal text-gray-400">คน</span></p>
+                            </div>
+                            <div className="bg-gray-100 p-3 rounded-full text-brand-brown">
+                                <IconUsers />
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl shadow-sm p-6 border border-red-100 flex items-center justify-between relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-2 h-full bg-brand-red"></div>
+                            <div>
+                                <p className="text-sm text-brand-red font-medium">เสี่ยงลาออก (At Risk)</p>
+                                <p className="text-3xl font-bold text-brand-red mt-1">{dashboardSummary.atRisk} <span className="text-base font-normal">คน</span></p>
+                            </div>
+                            <div className="bg-red-50 p-3 rounded-full text-brand-red">
+                                <IconAlert />
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl shadow-sm p-6 border border-yellow-100 flex items-center justify-between relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-2 h-full bg-brand-yellow"></div>
+                            <div>
+                                <p className="text-sm text-brand-yellow font-medium">พนักงานใหม่ (New Joiner)</p>
+                                <p className="text-3xl font-bold text-brand-yellow mt-1">{dashboardSummary.newJoiner} <span className="text-base font-normal text-gray-600">คน</span></p>
+                            </div>
+                            <div className="bg-yellow-50 p-3 rounded-full text-brand-yellow">
+                                <IconNew />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Chart */}
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                            <h3 className="text-lg font-bold text-brand-brown mb-4">คะแนนความพร้อม (Readiness Score) รายสาขา</h3>
+                            <div className="h-72 w-full">
+                                <canvas ref={chartRef}></canvas>
+                            </div>
+                        </div>
+
+                        {/* Priority Actions */}
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
+                            <h3 className="text-lg font-bold text-brand-brown mb-4 flex items-center gap-2">
+                                <IconAlert />
+                                Priority Actions (สิ่งที่ต้องทำด่วน)
+                            </h3>
+                            <div className="overflow-y-auto custom-scrollbar pr-2 flex-1" style={{ maxHeight: '280px' }}>
+                                <ul className="space-y-3">
+                                    {priorities.map(p => (
+                                        <li key={p.id} className={`p-4 rounded-lg border-l-4 ${p.type.includes('เร่งด่วน') ? 'bg-red-50 border-brand-red' : 'bg-yellow-50 border-brand-yellow'}`}>
+                                            <div className="flex justify-between items-start">
+                                                <span className={`text-xs font-bold px-2 py-1 rounded-md mb-2 inline-block ${p.type.includes('เร่งด่วน') ? 'bg-red-100 text-brand-red' : 'bg-yellow-100 text-yellow-800'}`}>
+                                                    {p.type} | {p.branch}
+                                                </span>
+                                                <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm border">{p.category}</span>
+                                            </div>
+                                            <p className="text-sm text-gray-800 font-medium">{p.action}</p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Tab 2: Branch Details ---
+        function TabBranch() {
+            const [selectedBranch, setSelectedBranch] = useState('BAM');
+            const data = branchDetails[selectedBranch];
+
+            return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 animate-fade-in">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                        <div>
+                            <h2 className="text-2xl font-bold text-brand-brown">เจาะลึกสถานะสาขา</h2>
+                            <p className="text-gray-500 text-sm">เลือกสาขาเพื่อดูโครงสร้างผู้จัดการและภาพรวมการฝึกอบรม</p>
+                        </div>
+                        <select 
+                            className="bg-brand-light border border-brand-yellow text-brand-brown text-lg rounded-lg focus:ring-brand-red focus:border-brand-red block w-full md:w-64 p-2.5 font-bold shadow-sm"
+                            value={selectedBranch}
+                            onChange={(e) => setSelectedBranch(e.target.value)}
+                        >
+                            {Object.keys(branchDetails).map(b => (
+                                <option key={b} value={b}>{b} - {branchDetails[b].name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {data ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Management Structure */}
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">โครงสร้างกำลังคน</h3>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                                        <span className="text-gray-600">พนักงานทั้งหมด (HC)</span>
+                                        <span className="font-bold text-xl">{data.hc}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center border border-gray-100 p-3 rounded-lg">
+                                        <span className="text-gray-600">Restaurant Manager (RM)</span>
+                                        <span className="font-medium text-brand-brown">{data.rm}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center border border-gray-100 p-3 rounded-lg">
+                                        <span className="text-gray-600">Asst. Manager (ARM)</span>
+                                        <span className={`font-medium ${data.arm === '0' ? 'text-brand-red' : 'text-brand-brown'}`}>{data.arm}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center border border-gray-100 p-3 rounded-lg">
+                                        <span className="text-gray-600">Shift Supervisor (SS)</span>
+                                        <span className={`font-medium ${data.ss.includes('At Risk') || data.ss === '0' ? 'text-brand-red' : 'text-brand-brown'}`}>{data.ss}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Readiness Notes */}
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">บันทึกความพร้อม (Readiness Notes)</h3>
+                                <div className="space-y-4">
+                                    <div className={`p-4 rounded-lg border-l-4 ${data.opsNote.includes('วิกฤต') ? 'bg-red-50 border-brand-red' : 'bg-blue-50 border-blue-400'}`}>
+                                        <h4 className="font-bold text-sm text-gray-700 mb-1">Ops Readiness (ระดับปฏิบัติการ)</h4>
+                                        <p className="text-sm text-gray-800 whitespace-pre-line">{data.opsNote}</p>
+                                    </div>
+                                    <div className={`p-4 rounded-lg border-l-4 ${data.leadNote.includes('ต่ำ') ? 'bg-yellow-50 border-brand-yellow' : 'bg-green-50 border-green-400'}`}>
+                                        <h4 className="font-bold text-sm text-gray-700 mb-1">Leadership Readiness (ระดับหัวหน้างาน)</h4>
+                                        <p className="text-sm text-gray-800 whitespace-pre-line">{data.leadNote}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-center text-gray-500 py-10">กรุณาเลือกสาขาที่มีข้อมูล</p>
+                    )}
+                </div>
+            );
+        }
+
+        // --- Tab 3: Employee Gap ---
+        function TabEmployee() {
+            const [filterRisk, setFilterRisk] = useState(false);
+            const [filterNew, setFilterNew] = useState(false);
+            const [searchTxt, setSearchTxt] = useState('');
+
+            // Filtering logic
+            const filteredEmp = employees.filter(emp => {
+                let match = true;
+                if (filterRisk && !emp.isAtRisk) match = false;
+                if (filterNew && !emp.isNew) match = false;
+                if (searchTxt && !emp.name.toLowerCase().includes(searchTxt.toLowerCase()) && !emp.branch.toLowerCase().includes(searchTxt.toLowerCase())) match = false;
+                return match;
+            });
+
+            // Helper to render checkmark or cross
+            const renderStatus = (date) => {
+                if (date) return <div className="flex justify-center" title={`เรียนเมื่อ: ${date}`}><IconCheck /></div>;
+                return <div className="flex justify-center"><IconCross /></div>;
+            };
+
+            return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 animate-fade-in flex flex-col h-full">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
+                        <div>
+                            <h2 className="text-xl font-bold text-brand-brown">ตารางสถานะการอบรมรายบุคคล</h2>
+                            <p className="text-gray-500 text-sm">เครื่องหมาย <span className="text-green-600 font-bold">✓</span> = ผ่านแล้ว | <span className="text-gray-400 font-bold">✕</span> = ยังไม่ผ่าน</p>
+                        </div>
+                        
+                        {/* Filters */}
+                        <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+                            <input 
+                                type="text" 
+                                placeholder="ค้นหาชื่อ หรือ สาขา..." 
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-yellow w-full lg:w-48"
+                                value={searchTxt}
+                                onChange={e => setSearchTxt(e.target.value)}
+                            />
+                            <button 
+                                onClick={() => { setFilterRisk(false); setFilterNew(false); }}
+                                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors border ${(!filterRisk && !filterNew) ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                            >
+                                ทั้งหมด
+                            </button>
+                            <button 
+                                onClick={() => { setFilterRisk(true); setFilterNew(false); }}
+                                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors border flex items-center gap-1 ${filterRisk ? 'bg-brand-red text-white border-brand-red' : 'bg-white text-brand-red border-red-200 hover:bg-red-50'}`}
+                            >
+                                <IconAlert /> เสี่ยงลาออก
+                            </button>
+                            <button 
+                                onClick={() => { setFilterNew(true); setFilterRisk(false); }}
+                                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors border flex items-center gap-1 ${filterNew ? 'bg-brand-yellow text-white border-brand-yellow' : 'bg-white text-yellow-700 border-yellow-200 hover:bg-yellow-50'}`}
+                            >
+                                <IconNew /> พนักงานใหม่
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Data Table */}
+                    <div className="overflow-x-auto rounded-lg border border-gray-200 custom-scrollbar">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead className="bg-brand-light">
+                                <tr>
+                                    <th scope="col" className="px-4 py-3 text-left font-semibold text-brand-brown w-16">สาขา</th>
+                                    <th scope="col" className="px-4 py-3 text-left font-semibold text-brand-brown w-48">ชื่อ-สกุล</th>
+                                    <th scope="col" className="px-4 py-3 text-left font-semibold text-brand-brown w-32">ตำแหน่ง</th>
+                                    <th scope="col" className="px-2 py-3 text-center font-semibold text-brand-brown whitespace-nowrap">Food Safety</th>
+                                    <th scope="col" className="px-2 py-3 text-center font-semibold text-brand-brown whitespace-nowrap">ผู้สัมผัสอาหาร</th>
+                                    <th scope="col" className="px-2 py-3 text-center font-semibold text-brand-brown whitespace-nowrap">BOH/FOH</th>
+                                    <th scope="col" className="px-2 py-3 text-center font-semibold text-brand-brown whitespace-nowrap">Shift Mgt.</th>
+                                    <th scope="col" className="px-2 py-3 text-center font-semibold text-brand-brown whitespace-nowrap">P&L</th>
+                                    <th scope="col" className="px-2 py-3 text-center font-semibold text-brand-brown whitespace-nowrap">Train The Trainer</th>
+                                    <th scope="col" className="px-2 py-3 text-center font-semibold text-brand-brown whitespace-nowrap">Winning Heart</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-100">
+                                {filteredEmp.length > 0 ? filteredEmp.map((emp) => (
+                                    <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-4 py-3 whitespace-nowrap font-bold text-gray-700">{emp.branch}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <span className={emp.isAtRisk ? 'text-brand-red font-medium' : 'text-gray-900'}>{emp.name}</span>
+                                                {emp.isAtRisk && <span className="bg-red-100 text-brand-red text-[10px] px-1.5 py-0.5 rounded border border-red-200 font-bold">At Risk</span>}
+                                                {emp.isNew && <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-bold">New</span>}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-gray-500">{emp.pos}</td>
+                                        {/* Course Checks */}
+                                        <td className="px-2 py-3">{renderStatus(emp.courses.foodSafety)}</td>
+                                        <td className="px-2 py-3">{renderStatus(emp.courses.foodHandler)}</td>
+                                        <td className="px-2 py-3">{renderStatus(emp.courses.bohFoh)}</td>
+                                        <td className="px-2 py-3 bg-gray-50/50">{renderStatus(emp.courses.shiftMgt)}</td>
+                                        <td className="px-2 py-3 bg-gray-50/50">{renderStatus(emp.courses.pnl)}</td>
+                                        <td className="px-2 py-3 bg-gray-50/50">{renderStatus(emp.courses.ttt)}</td>
+                                        <td className="px-2 py-3 bg-gray-50/50">{renderStatus(emp.courses.wch)}</td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan="10" className="px-4 py-8 text-center text-gray-400">ไม่พบข้อมูลพนักงานที่ตรงกับเงื่อนไข</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
